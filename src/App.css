@@ -1,0 +1,16 @@
+body {
+  background-color: linen;
+}
+img{
+  max-width: 100px;
+
+}
+.monkey{
+  position: absolute;
+  right: 0;
+  bottom: 0;
+}
+.monkey:nth-child(2){
+  right: auto;
+  left:0
+}
