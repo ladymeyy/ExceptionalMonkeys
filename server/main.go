@@ -53,6 +53,34 @@ var broadcastPlayers = make(chan Player)
 var broadcastException = make(chan Exception)
 var upgrader = websocket.Upgrader{}
 
+
+func handleNewPlayer(ws *websocket.Conn) {
+	r2 := rand.New(s)
+	player := Player{ Id:uuid.New(),  P:point{X:0, Y:0}, Size: 50, Show:true, ExceptionType: exceptionsTypes[rand.Intn(3)], Color:[3]int{r2.Intn(256), r2.Intn(256), r2.Intn(256)} }
+
+
+	broadcastPlayers <- player //broadcast new player
+
+	//send to new player all current players
+
+	for key := range clients {
+		err := ws.WriteJSON(*clients[key])
+		if err != nil {
+			log.Printf("error: %v", err)
+			ws.Close()
+			delete(clients, ws)
+		}
+	}
+
+	//TODO send to new player all current exceptions
+
+
+	clients[ws] = &player
+
+	fmt.Println("new player")
+	fmt.Println( *clients[ws])
+}
+
 func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	upgrader.CheckOrigin = func(r *http.Request) bool { return true } //no cors
@@ -61,6 +89,8 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	handleNewPlayer(ws)
 
 	defer ws.Close() // Make sure we close the connection when the function returns
 
@@ -163,29 +193,6 @@ func exceptiosMapHandler (){
 }
 
 
-func handleNewPlayer(ws *websocket.Conn) {
-	r2 := rand.New(s)
-	player := Player{ Id:uuid.New(),  P:point{X:0, Y:0}, Size: 50, Show:true, ExceptionType: exceptionsTypes[rand.Intn(3)], Color:[3]int{r2.Intn(256), r2.Intn(256), r2.Intn(256)} }
-
-	fmt.Println("new player")
-	fmt.Println( *clients[ws])
-
-	clients[ws] = &player
-	broadcastPlayers <- player //broadcast new player
-
-	//send to new player all current players
-	for key := range clients {
-		err := ws.WriteJSON(*clients[key])
-		if err != nil {
-			log.Printf("error: %v", err)
-			ws.Close()
-			delete(clients, ws)
-		}
-	}
-
-	//send to new player all current exceptions
-
-}
 
 func main() {
 	fmt.Println("websockets project")
