@@ -21,217 +21,225 @@ type actionMessage struct {
 }
 
 type screenWH struct {
-	Width int64 // "0" || "10" ||  "-10"
+	Width  int64 // "0" || "10" ||  "-10"
 	Height int64 // "0" || "10" ||  "-10"
 }
 
-type point struct {
-	X int64 `json:"x"`
-	Y int64 `json:"y"`
-}
-
 type Player struct {
-	Id            uuid.UUID `json"id"`
+	Id            uuid.UUID `json:"id"`
 	ExceptionType string    `json:"exceptionType"`
 	Color         [3]int    `json:"color"`
-	P             point     `json:"p"`
+	X int64  `json:"x"`
+	Y int64  `json:"y"`
 	Show          bool      `json:"show"`
-	windowH 	 int64
-	windowW      int64
-	Collision   string      `json:"collision"`  // border || player || exception
-	Score       int   `json:"score"`
+	windowH       int64
+	windowW       int64
+	Collision     bool `json:"collision"`
+	Score         int  `json:"score"`
 }
 
 type Exception struct {
-	Id            uuid.UUID `json"id"`
 	ExceptionType string    `json:"exceptionType"`
 	Show          bool      `json:"show"`
-	P             point     `json:"p"`
+	X int64  `json:"x"`
+	Y int64  `json:"y"`
+}
+
+type ElementsMsg struct {
+	Self     *Player    `json:"self,omitempty"`
+	Plyer    *Player    `json:"player,omitempty"`
+	Excption *Exception `json:"exception,omitempty"`
 }
 
 var exceptionsMap = struct {
 	sync.RWMutex
-	m map[point]Exception
-}{m: make(map[point]Exception)}
+	items [3]Exception
+}{}
 
-var s = rand.NewSource(time.Now().UnixNano())
+func initExceptionsList(){
+	exceptionsMap.Lock()
+	defer exceptionsMap.Unlock()
+
+	for i := 0; i < len(exceptionsTypes); i++ {
+		exceptionsMap.items[i] = Exception{ExceptionType: exceptionsTypes[rand.Intn(3)], X: 0, Y: 0, Show: false}
+	}
+}
+
+func Set()(Exception, bool) {
+	rand.Seed(time.Now().UnixNano())
+	var min, max int = 50, 300
+	exceptionsMap.Lock()
+	defer exceptionsMap.Unlock()
+
+	for  i := 0; i < len(exceptionsMap.items); i++  {
+		if !(exceptionsMap.items[i].Show){
+			exceptionsMap.items[i].Show = true
+			exceptionsMap.items[i].X= int64(rand.Intn(max - min + 1) + min)
+			exceptionsMap.items[i].Y= int64(rand.Intn(max - min + 1) + min)
+			return exceptionsMap.items[i],true
+		}
+	}
+	return Exception{},false
+}
+
+func RemoveRand() (Exception, bool) {
+	exceptionsMap.Lock()
+	defer exceptionsMap.Unlock()
+	for i := 0; i < len(exceptionsMap.items); i++  {
+		if !(exceptionsMap.items[i].Show){
+			exceptionsMap.items[i].Show = false
+			return exceptionsMap.items[i], true
+		}
+	}
+	return Exception{},false
+}
+
+func HandleExceptionCollision(newX int64, newY int64 ,player Player ) (Exception, bool) {
+	exceptionsMap.Lock()
+	defer exceptionsMap.Unlock()
+	for i := 0; i < len(exceptionsMap.items); i++ {
+		value:=exceptionsMap.items[i]
+		if value.Show {
+			if (newX == value.X || newX+50 >= value.X || newX-50 <= value.X) &&
+			(newY == value.Y || newY+50 >= value.Y || newY-50 <= value.Y) {
+				if value.ExceptionType == player.ExceptionType {
+					exceptionsMap.items[i].Show=false
+				}
+				return exceptionsMap.items[i], true
+			}
+		}
+	}
+	return Exception{}, false
+}
+
 var exceptionsTypes = [3]string{"NullPointerException", "DivideByZeroException", "IOException"}
 var clients = make(map[*websocket.Conn]*Player) // connected clients
-var broadcastPlayers = make(chan Player)
-var broadcastException = make(chan Exception)
+var broadcastMsg = make(chan ElementsMsg)
 var upgrader = websocket.Upgrader{}
 
 func handleNewPlayer(ws *websocket.Conn) {
-	r2 := rand.New(s)
-	player := Player{Id: uuid.New(), P: point{X: int64(r2.Intn(300)), Y: 0}, Score: 0, Show: true, ExceptionType: exceptionsTypes[rand.Intn(3)], Color: [3]int{r2.Intn(256), r2.Intn(256), r2.Intn(256)}, Collision: "" }
+	rand.Seed(time.Now().UnixNano())
+	player := Player{Id: uuid.New(), X: int64(rand.Intn(300)), Y: int64(rand.Intn(300)), Score: 0, Show: true, ExceptionType: exceptionsTypes[rand.Intn(3)], Color: [3]int{rand.Intn(256), rand.Intn(256), rand.Intn(256)}, Collision: false}
 
-	fmt.Println("new player")
-	fmt.Println(player)
-	ws.WriteJSON(player)
+	ws.WriteJSON(ElementsMsg{Self: &player}) //send to client active player as self
 
-	//send to new player all current players
+	//send all current players to the new player
 	for key := range clients {
-		err := ws.WriteJSON(*clients[key])
+		err := ws.WriteJSON(ElementsMsg{Plyer: clients[key]})
 		if err != nil {
-			log.Printf( "76 error: %v", err)
+			log.Printf("145 error: %v", err)
 			ws.Close()
 			delete(clients, ws)
 		}
 	}
 
-	//TODO send to new player all current exceptions
+	broadcastMsg <- ElementsMsg{Plyer: &player} //broadcast new player to all clients
 	clients[ws] = &player
-	broadcastPlayers <- player //broadcast new player
 
 	var msg screenWH
 	err := ws.ReadJSON(&msg)
 	if err != nil {
-		log.Printf(" 89 error: %v", err)
-		var plyrMsg = clients[ws]
-		plyrMsg.Show = false
-		broadcastPlayers <- *plyrMsg
+		log.Printf(" 142 error: %v", err)
+		var plyr = clients[ws]
+		plyr.Show = false
+		broadcastMsg <- ElementsMsg{Plyer: plyr}
 		delete(clients, ws)
+	}else{
+		clients[ws].windowH = msg.Height
+		clients[ws].windowW = msg.Width
 	}
-	clients[ws].windowH = msg.Height
-	clients[ws].windowW = msg.Width
-
 }
 
-func handlePlayerMovement(ws *websocket.Conn, newX int64, newY int64){
-
-	x := int64(clients[ws].P.X) + newX
-	y := int64(clients[ws].P.Y) + newY
+func handlePlayerMovement(ws *websocket.Conn, newX int64, newY int64) {
+	x := int64(clients[ws].X) + newX
+	y := int64(clients[ws].Y) + newY
 	player := *clients[ws]
-
-	if y < 0  || x < 0 || x >= clients[ws].windowW || y >= clients[ws].windowH{
-		player.Collision = "border"
-	}else{
-
-		//check for collision with other players
-		for key := range clients {
-			client := *clients[key]
-			if client.P.X == x ||  client.P.Y == y{
-				player.Collision = "player"
+	if y < 0 || x < 0 || x >= clients[ws].windowW || y >= clients[ws].windowH {
+		player.Collision = true
+	} else {
+		value, ok:= HandleExceptionCollision(x,y,player)
+		if ok {
+			if value.ExceptionType == player.ExceptionType{
+				broadcastMsg <- ElementsMsg{Excption: &value}
+				player.Score = player.Score + 1
+				clients[ws].Score = player.Score
+			}else{
+				player.Collision = true
 			}
 		}
-
-		//TODO add check collisions with exceptions
-		player.P.X = x
-		clients[ws].P.X = x
-		clients[ws].P.Y = y
-		player.P.Y = y
-		fmt.Println("player with new values ")
-		fmt.Println(*clients[ws])
+		player.X , player.Y = x, y
+		clients[ws].X, clients[ws].Y = x,y
 	}
-
-	broadcastPlayers <- player
+	broadcastMsg <- ElementsMsg{Plyer: &player}
 }
 
+func exceptionsMapHandler() {
+	time.Sleep(30 *time.Second)
+	addExTicker := time.NewTicker(40 * time.Second)
+	go func() {
+		for t := range addExTicker.C {
+			_ = t // we don't print the ticker time, so assign this `t` variable to underscore `_` to avoid error
+			newEx,ok := Set()
+			if ok { broadcastMsg <-  ElementsMsg{Excption: &newEx} }
+		}
+	}()
+
+	removeExTicker := time.NewTicker(50 * time.Second)
+	go func() {
+		for t := range removeExTicker.C {
+			_ = t // we don't print the ticker time, so assign this `t` variable to underscore `_` to avoid error
+			deletedValue,ok :=RemoveRand()
+			if ok { broadcastMsg <- ElementsMsg{Excption: &deletedValue} }
+		}
+	}()
+}
 
 func handleConnections(w http.ResponseWriter, r *http.Request) {
-
 	upgrader.CheckOrigin = func(r *http.Request) bool { return true } //no cors
-
 	ws, err := upgrader.Upgrade(w, r, nil) // Upgrade initial GET request to a websocket
-	if err != nil {
-		log.Fatal(err)
-	}
+	if err != nil { log.Fatal(err)}
 
 	handleNewPlayer(ws)
-
 	defer ws.Close() // Make sure we close the connection when the function returns
 
 	for {
 		var msg actionMessage
-		// Read in a new message as JSON and map it to a incomingMessage object
 		err := ws.ReadJSON(&msg)
 		if err != nil {
-			log.Printf(" 149 error: %v", err)
-			var plyrMsg = clients[ws]
+			log.Printf("207 error: %v", err)
+			plyrMsg := clients[ws]
 			plyrMsg.Show = false
-			broadcastPlayers <- *plyrMsg
+			broadcastMsg <- ElementsMsg{Plyer: plyrMsg}
 			delete(clients, ws)
 			break
 		}
-		//INSERT HERE  call to check collision function
 		newX, _ := strconv.ParseInt(msg.X, 10, 64)
 		newY, _ := strconv.ParseInt(msg.Y, 10, 64)
-		handlePlayerMovement(ws, newX , newY)
+		handlePlayerMovement(ws, newX, newY)
 	}
 }
+
 func broadcastMessages() {
 	for {
-		// Grab the next message from the broadcast channel
-		msg := <-broadcastPlayers
-
-		// Send it out to every client that is currently connected
+		msg := <-broadcastMsg
 		for client := range clients {
 			err := client.WriteJSON(msg)
 			if err != nil {
-				log.Printf("171 error: %v", err)
+				log.Printf("224 error: %v", err)
 				client.Close()
 				delete(clients, client)
 			}
 		}
-
 	}
 }
 
-func exceptiosMapHandler() {
-	//Thread.
-	// every 5 sec:  create new ex ->add to eXarr -> broadcast to users
-	//exery 10 sec:  choose rand ex ->remove from exArr ->broadcast to users
-
-	var r = rand.New(s)
-	addExTicker := time.NewTicker(5 * time.Second)
-	go func() {
-		for t := range addExTicker.C {
-			_ = t // we don't print the ticker time, so assign this `t` variable to underscore `_` to avoid error
-			var newEx = Exception{Id: uuid.New(), ExceptionType: exceptionsTypes[r.Intn(3)], P: point{X: int64(r.Intn(255)), Y: int64(r.Intn(255))}, Show: true}
-			exceptionsMap.Lock() //take the write lock
-			exceptionsMap.m[newEx.P] = newEx
-			exceptionsMap.Unlock() // release the write lock
-			fmt.Println(newEx)
-			broadcastException <- newEx
-			//todo add broadcast to user here
-		}
-	}()
-
-	removeExTicker := time.NewTicker(10 * time.Second)
-	go func() {
-		for t := range removeExTicker.C {
-			_ = t // we don't print the ticker time, so assign this `t` variable to underscore `_` to avoid error
-			var value Exception
-			exceptionsMap.RLock()
-			for key := range exceptionsMap.m {
-				value = exceptionsMap.m[key]
-				exceptionsMap.RUnlock()
-				break
-			}
-			value.Show = false
-			broadcastException <- value
-			//exceptionsMap.Lock() //take the write lock
-			//delete(exceptionsMap, value.p)
-			//exceptionsMap.Unlock() //take the write lock
-			fmt.Println(value)
-
-		}
-	}()
-
-	// wait for 10 seconds
-	//time.Sleep(20 *time.Second)
-	//	ticker.Stop()
-
-}
-
 func main() {
-	fmt.Println("websockets project")
-	// Configure websocket route
-
+	fmt.Println("ExceptionalMonkeys ... ")
 	http.HandleFunc("/ws", handleConnections)
+	initExceptionsList()
 	go broadcastMessages()
-	//go exceptiosMapHandler()
-	// Start the server on localhost port 8080 and log any errors
+	go exceptionsMapHandler()
+
 	log.Println("http server started on :8080")
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
