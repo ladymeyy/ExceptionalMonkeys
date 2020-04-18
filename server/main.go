@@ -51,6 +51,10 @@ type ElementsMsg struct {
 	Excption *Exception `json:"exception,omitempty"`
 }
 
+var exceptionsTypes = [3]string{"NullPointerException", "DivideByZeroException", "IOException"}
+var clients = make(map[*websocket.Conn]*Player) // connected clients
+var broadcastMsg = make(chan ElementsMsg)
+var upgrader = websocket.Upgrader{}
 var exceptionsMap = struct {
 	sync.RWMutex
 	items [3]Exception
@@ -59,10 +63,13 @@ var exceptionsMap = struct {
 func initExceptionsList(){
 	exceptionsMap.Lock()
 	defer exceptionsMap.Unlock()
-
+	println("init Exceptions: " )
 	for i := 0; i < len(exceptionsTypes); i++ {
-		exceptionsMap.items[i] = Exception{ExceptionType: exceptionsTypes[rand.Intn(3)], X: 0, Y: 0, Show: false}
+		exceptionsMap.items[i] = Exception{ExceptionType: exceptionsTypes[i], X: 0, Y: 0, Show: false}
+		fmt.Println(" ", exceptionsMap.items[i])
 	}
+
+	fmt.Println("init Exceptions done " )
 }
 
 func Set()(Exception, bool) {
@@ -71,13 +78,13 @@ func Set()(Exception, bool) {
 	exceptionsMap.Lock()
 	defer exceptionsMap.Unlock()
 
-	for  i := 0; i < len(exceptionsMap.items); i++  {
-		if !(exceptionsMap.items[i].Show){
-			exceptionsMap.items[i].Show = true
-			exceptionsMap.items[i].X= int64(rand.Intn(max - min + 1) + min)
-			exceptionsMap.items[i].Y= int64(rand.Intn(max - min + 1) + min)
-			return exceptionsMap.items[i],true
-		}
+	var i = rand.Intn(3)
+	if !(exceptionsMap.items[i].Show){
+		exceptionsMap.items[i].Show = true
+		exceptionsMap.items[i].X= int64(rand.Intn(max - min + 1) + min)
+		exceptionsMap.items[i].Y= int64(rand.Intn(max - min + 1) + min)
+		fmt.Println("new Exception: ", exceptionsMap.items[i] )
+		return exceptionsMap.items[i],true
 	}
 	return Exception{},false
 }
@@ -85,11 +92,12 @@ func Set()(Exception, bool) {
 func RemoveRand() (Exception, bool) {
 	exceptionsMap.Lock()
 	defer exceptionsMap.Unlock()
-	for i := 0; i < len(exceptionsMap.items); i++  {
-		if !(exceptionsMap.items[i].Show){
-			exceptionsMap.items[i].Show = false
-			return exceptionsMap.items[i], true
-		}
+	rand.Seed(time.Now().UnixNano())
+	var i = rand.Intn(3)
+	if exceptionsMap.items[i].Show{
+		exceptionsMap.items[i].Show = false
+		fmt.Println("removed rand Exception: ", exceptionsMap.items[i] )
+		return exceptionsMap.items[i], true
 	}
 	return Exception{},false
 }
@@ -99,23 +107,15 @@ func HandleExceptionCollision(newX int64, newY int64 ,player Player ) (Exception
 	defer exceptionsMap.Unlock()
 	for i := 0; i < len(exceptionsMap.items); i++ {
 		value:=exceptionsMap.items[i]
-		if value.Show {
-			if (newX == value.X || newX+50 >= value.X || newX-50 <= value.X) &&
-			(newY == value.Y || newY+50 >= value.Y || newY-50 <= value.Y) {
-				if value.ExceptionType == player.ExceptionType {
-					exceptionsMap.items[i].Show=false
-				}
-				return exceptionsMap.items[i], true
+		if value.Show && (newX == value.X || newX+50 >= value.X || newX-50 <= value.X) && (newY == value.Y || newY+50 >= value.Y || newY-50 <= value.Y) {
+			if value.ExceptionType == player.ExceptionType {
+				exceptionsMap.items[i].Show=false
 			}
+			return exceptionsMap.items[i], true
 		}
 	}
 	return Exception{}, false
 }
-
-var exceptionsTypes = [3]string{"NullPointerException", "DivideByZeroException", "IOException"}
-var clients = make(map[*websocket.Conn]*Player) // connected clients
-var broadcastMsg = make(chan ElementsMsg)
-var upgrader = websocket.Upgrader{}
 
 func handleNewPlayer(ws *websocket.Conn) {
 	rand.Seed(time.Now().UnixNano())
@@ -127,7 +127,7 @@ func handleNewPlayer(ws *websocket.Conn) {
 	for key := range clients {
 		err := ws.WriteJSON(ElementsMsg{Plyer: clients[key]})
 		if err != nil {
-			log.Printf("145 error: %v", err)
+			log.Printf("130 error: %v", err)
 			ws.Close()
 			delete(clients, ws)
 		}
