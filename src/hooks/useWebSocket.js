@@ -4,14 +4,13 @@ const initialState = {
   exceptions: [],
   players: []
 };
-const counterReducer = (state, action) => {
+const gameReducer = (state, action) => {
   switch (action.type) {
     case "player":
       const { player } = action.by
       const objIndex = state.players.findIndex(obj => obj.id === player.id);
       if (objIndex !== -1) {
         const clonePlayers = JSON.parse(JSON.stringify(state.players));
-
         //check if player need to be seen in the screen if not remove from players
         if (!player.show) {
           clonePlayers.splice(objIndex, 1);
@@ -20,7 +19,6 @@ const counterReducer = (state, action) => {
             players: clonePlayers
           }
         }
-
         //check if player hit bounderies and add animation
         player.collision ? clonePlayers[objIndex].shake = true : clonePlayers[objIndex].shake = false
 
@@ -42,7 +40,8 @@ const counterReducer = (state, action) => {
       };
     case "exception":
       const { exception } = action.by
-      const exceptionIndex = state.exceptions.findIndex(obj => obj.id === exception.id);
+      const exceptionIndex = state.exceptions.findIndex(obj => obj.exceptionType === exception.exceptionType);
+     
       if (exceptionIndex !== -1) {
         const cloneExceptions = JSON.parse(JSON.stringify(state.exceptions));
         if (!exception.show) {
@@ -53,6 +52,7 @@ const counterReducer = (state, action) => {
           }
         }
       }
+      if(!exception.show) return {...state}
       return {
         ...state,
         exceptions: [...state.exceptions, exception]
@@ -73,17 +73,17 @@ const counterReducer = (state, action) => {
 };
 
 export const useWebSocket = (url, bounderies) => {
-  const [messages, dispatch] = useReducer(counterReducer, initialState);
+  const [messages, dispatch] = useReducer(gameReducer, initialState);
   const webSocket = useRef(null);
 
   useEffect(() => {
     webSocket.current = new WebSocket(url);
     webSocket.current.onmessage = (event) => {
       const parseData = JSON.parse(event.data);
-    
       const [wsInfo] = Object.getOwnPropertyNames(parseData)
       dispatch({ type: wsInfo, by: parseData });
     };
+
   }, [url]);
 
 
@@ -93,7 +93,7 @@ export const useWebSocket = (url, bounderies) => {
     }
     return () => {
       webSocket.current.onclose = (e) => {
-        console.log("socket close connection", e)
+        console.log('e',e)
       }
     };
   }, [bounderies]);
@@ -103,5 +103,5 @@ export const useWebSocket = (url, bounderies) => {
     webSocket.current.send(JSON.stringify(message));
   }, [webSocket]);
 
-  return [messages, sendMessage]
+  return [messages, sendMessage,webSocket.current]
 };

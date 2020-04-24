@@ -3,27 +3,37 @@ import React, { useCallback } from 'react';
 import './App.css';
 import { useWebSocket } from './hooks/useWebSocket'
 import { useBodyBounderies } from './hooks/useBodyBounderies'
-import {ws, playerMoves} from './Utils.js/Utils'
+import { ws, playerMoves } from './Utils.js/Utils'
 import { useEventListener } from './hooks/useEventListener'
 import Monkeys from './components/Monkeys'
+import Score from './components/score/Score'
+import Dialog from './components/dialog/Dialog'
+import Exceptions from './components/exceptions/Exceptions'
 
 function App() {
   const bodyBounderies = useBodyBounderies()
-  const [playState, sendMSG] = useWebSocket(ws, bodyBounderies)
+  const [playState, sendMSG,webSocket] = useWebSocket(ws, bodyBounderies)
   const showKeyCode = useCallback(({ key }) => {
-      sendMSG(playerMoves[key])
-    },[sendMSG]);
-
+    sendMSG(playerMoves[key])
+  }, [sendMSG]);
+  
   useEventListener('keydown', showKeyCode);
   return (
-    <>
-    <div>
-      <h2>Score</h2>
-      {playState.players.map(player => <div key={player.id}>{player.active? "You" : player.exceptionType} - {player.score}</div>)}
-    </div>
-    {playState.exceptions.map(exception => <div key={Math.random()} style={{ position: 'absolute',bottom: exception.y + 'px', left: exception.x + 'px' }}>{exception.exceptionType}</div>)}
+    <>      
+    { webSocket && webSocket.readyState === 1 ?
+      playState.players.length === 1 ?
+      <Dialog msg={'Waiting for other players to play'} />
+      :
+      <>
+        <Score players={playState.players} />
+        <Exceptions exceptions={playState.exceptions} />
+        <Monkeys players={playState.players} />
+      </>
+      :
+      <Dialog msg={'Waiting for server'} />
 
-    <Monkeys players={playState.players} />
+    }
+
     </>
   );
 }

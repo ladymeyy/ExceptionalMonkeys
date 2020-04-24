@@ -10,7 +10,7 @@ export const useBodyBounderies = () => {
           width: (getBodyBoundries.width - MONKEYWIDTH),
           height: (getBodyBoundries.height - MONKEYHEIGHT)
         }
-      }, [])
+      }, []);
 
   return bodyBoundries
 };
