@@ -1,3 +1,5 @@
+This project was developed with @roeib - see original repo: https://github.com/roeib/go-react
+
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
 ## Available Scripts
