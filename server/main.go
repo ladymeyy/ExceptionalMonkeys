@@ -20,8 +20,8 @@ type actionMessage struct {
 }
 
 type screenWH struct {
-	Width  int64 // "0" || "10" ||  "-10"
-	Height int64 // "0" || "10" ||  "-10"
+	Width  int64
+	Height int64 
 }
 
 type Player struct {
